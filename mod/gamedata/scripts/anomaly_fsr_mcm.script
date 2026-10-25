@@ -1,0 +1,16 @@
+-- MCM page for Anomaly FSR 1 (optional; anomaly_fsr.script falls back to its defaults without MCM).
+-- Keep the defaults here in sync with the `defaults` table in anomaly_fsr.script.
+
+function on_mcm_load()
+	return {
+		id = "anomaly_fsr",
+		sh = true,
+		gr = {
+			{ id = "title", type = "title", text = "ui_mcm_anomaly_fsr_title", align = "l", clr = { 255, 196, 18, 0 } },
+			{ id = "enabled", type = "check", val = 1, def = true },
+			{ id = "sharpening", type = "check", val = 1, def = true },
+			{ id = "sharpness", type = "track", val = 2, min = 0, max = 2, step = 0.05, prec = 2, def = 0.25 },
+			{ id = "note", type = "desc", text = "ui_mcm_anomaly_fsr_note" },
+		},
+	}
+end

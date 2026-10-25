@@ -1,0 +1,201 @@
+--[[
+	Anomaly FSR 1
+	AMD FidelityFX Super Resolution 1.0 for the DX11 renderer.
+
+	When the game resolution (Options > Video > Resolution) is lower than the window (borderless)
+	or the display (fullscreen), bin\anomaly_fsr.dll upscales every frame with FSR 1 EASU and
+	sharpens it with RCAS, instead of leaving the stretch to Windows / the monitor.
+
+	The DLL is loaded through LuaJIT's ffi (available with the modded exes). Settings come from
+	MCM when it is installed, otherwise from the defaults below.
+--]]
+
+local defaults = {
+	enabled    = true,  -- upscale with FSR when the game resolution is below the output resolution
+	sharpening = true,  -- RCAS sharpening pass after the upscale
+	sharpness  = 0.25,  -- RCAS strength in stops: 0 = sharpest, 2 = softest
+}
+
+local DLL_NAME = "anomaly_fsr.dll"
+local LOG_POLL_MS = 2000
+
+local CDEF = [[
+int afsr_init(void);
+void afsr_set_enabled(int enabled);
+void afsr_set_sharpening(int enabled);
+void afsr_set_sharpness(float stops);
+int afsr_state(void);
+const char* afsr_status(void);
+const char* afsr_poll_log(void);
+const char* afsr_version(void);
+]]
+
+-- afsr_state() values
+local STATE_WAITING_FOR_RESET = 1
+
+local ffi_mod, lib       -- set when the DLL was loaded through ffi
+local loaded = false     -- DLL is in the process (through ffi or package.loadlib)
+local load_attempted = false
+local restart_requested = false -- one vid_restart per launch to route the swapchain through FSR
+local restart_pending = false
+local applied = {}
+local next_log_poll = 0
+
+local function log(fmt, ...)
+	printf("[Anomaly FSR] " .. fmt, ...)
+end
+
+local function get_setting(key)
+	if ui_mcm and ui_mcm.get then
+		local value = ui_mcm.get("anomaly_fsr/" .. key)
+		if value ~= nil then
+			return value
+		end
+	end
+	return defaults[key]
+end
+
+local function file_exists(path)
+	if not io or not io.open then
+		return true -- can't check; let the loader report the error
+	end
+	local f = io.open(path, "rb")
+	if f then
+		f:close()
+		return true
+	end
+	return false
+end
+
+local function find_dll()
+	local candidates = {}
+	local ok, root = pcall(function() return getFS():update_path("$fs_root$", "") end)
+	if ok and root and root ~= "" then
+		if not string.find(root, "[\\/]$") then
+			root = root .. "\\"
+		end
+		candidates[#candidates + 1] = root .. "bin\\" .. DLL_NAME
+	end
+	candidates[#candidates + 1] = DLL_NAME -- working directory is usually bin\
+
+	for _, path in ipairs(candidates) do
+		if file_exists(path) then
+			return path
+		end
+	end
+	return nil, candidates[1] or DLL_NAME
+end
+
+local function poll_log()
+	if not lib then
+		return
+	end
+	local text = ffi_mod.string(lib.afsr_poll_log())
+	for line in string.gmatch(text, "[^\n]+") do
+		log("%s", line)
+	end
+end
+
+local function load_dll()
+	if load_attempted then
+		return loaded
+	end
+	load_attempted = true
+
+	local path, expected = find_dll()
+	if not path then
+		log("! %s not found (expected %s). Is the mod installed and enabled in MO2?", DLL_NAME, expected)
+		return false
+	end
+
+	local has_ffi, ffi = pcall(require, "ffi")
+	if has_ffi and ffi then
+		pcall(ffi.cdef, CDEF) -- fails harmlessly if already declared
+		local ok, handle = pcall(ffi.load, path)
+		if ok and handle then
+			ffi_mod, lib = ffi, handle
+			loaded = lib.afsr_init() == 1
+			log("Loaded %s v%s", path, ffi_mod.string(lib.afsr_version()))
+			poll_log()
+			return loaded
+		end
+		log("! ffi.load(%s) failed: %s", path, tostring(handle))
+	end
+
+	-- No ffi: package.loadlib still lets us install the hooks, with default settings only.
+	if package and package.loadlib then
+		local init, err = package.loadlib(path, "luaopen_anomaly_fsr")
+		if init then
+			init()
+			loaded = true
+			log("Loaded %s through package.loadlib (ffi unavailable: MCM settings are ignored)", path)
+			return true
+		end
+		log("! package.loadlib(%s) failed: %s", path, tostring(err))
+	end
+
+	log("! Could not load %s: this game build has neither LuaJIT ffi nor package.loadlib. Install the modded exes.", DLL_NAME)
+	return false
+end
+
+local function apply_settings()
+	if not lib then
+		return
+	end
+
+	local enabled = get_setting("enabled") and true or false
+	local sharpening = get_setting("sharpening") and true or false
+	local sharpness = tonumber(get_setting("sharpness")) or defaults.sharpness
+
+	lib.afsr_set_enabled(enabled and 1 or 0)
+	lib.afsr_set_sharpening(sharpening and 1 or 0)
+	lib.afsr_set_sharpness(sharpness)
+
+	-- Exclusive fullscreen picks the display mode during a device reset, so toggling FSR needs one.
+	if applied.enabled ~= nil and applied.enabled ~= enabled and restart_requested then
+		restart_pending = true
+	end
+	applied.enabled = enabled
+end
+
+local function actor_on_first_update()
+	if not loaded or restart_requested then
+		return
+	end
+	-- The swapchain already existed when the DLL was loaded; a device reset routes it through FSR.
+	if not lib or lib.afsr_state() == STATE_WAITING_FOR_RESET then
+		restart_requested = true
+		restart_pending = true
+	end
+end
+
+local function actor_on_update()
+	if restart_pending then
+		restart_pending = false
+		log("Resetting the video device to apply FSR")
+		exec_console_cmd("vid_restart")
+	end
+
+	local now = time_global()
+	if now >= next_log_poll then
+		next_log_poll = now + LOG_POLL_MS
+		poll_log()
+	end
+end
+
+-- Current state as text, e.g. for the debug console: anomaly_fsr.status()
+function status()
+	if not lib then
+		return loaded and "loaded (no ffi, status unavailable)" or "not loaded"
+	end
+	return ffi_mod.string(lib.afsr_status())
+end
+
+function on_game_start()
+	if load_dll() then
+		apply_settings()
+	end
+	RegisterScriptCallback("actor_on_first_update", actor_on_first_update)
+	RegisterScriptCallback("actor_on_update", actor_on_update)
+	RegisterScriptCallback("on_option_change", apply_settings)
+end

@@ -1,0 +1,29 @@
+# Build output (CMake, MinGW and MSVC)
+/build/
+/build-*/
+/out/
+CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+*.obj
+*.o
+*.exe
+*.dll
+*.lib
+*.pdb
+*.ilk
+*.exp
+
+# Release archives produced by tools/package.sh
+/dist/
+
+# Editors and IDEs
+.vs/
+.vscode/
+.idea/
+*.user
+*.swp
+*~
+
+# macOS
+.DS_Store

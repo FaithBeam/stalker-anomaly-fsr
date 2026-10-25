@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<string_table>
+	<string id="ui_mcm_menu_anomaly_fsr">
+		<text>FSR 1 Upscaling</text>
+	</string>
+	<string id="ui_mcm_anomaly_fsr_title">
+		<text>AMD FidelityFX Super Resolution 1.0</text>
+	</string>
+	<string id="ui_mcm_anomaly_fsr_enabled">
+		<text>Enable FSR upscaling</text>
+	</string>
+	<string id="ui_mcm_anomaly_fsr_enabled_desc">
+		<text>Upscale with FSR 1 whenever the game resolution is lower than the window (borderless) or display (fullscreen) resolution. Toggling it resets the video device once.</text>
+	</string>
+	<string id="ui_mcm_anomaly_fsr_sharpening">
+		<text>RCAS sharpening</text>
+	</string>
+	<string id="ui_mcm_anomaly_fsr_sharpening_desc">
+		<text>Run FSR's Robust Contrast Adaptive Sharpening pass after the upscale.</text>
+	</string>
+	<string id="ui_mcm_anomaly_fsr_sharpness">
+		<text>Sharpness reduction (stops)</text>
+	</string>
+	<string id="ui_mcm_anomaly_fsr_sharpness_desc">
+		<text>0 is the sharpest result, every +1.0 halves the sharpening. AMD's default is around 0.2.</text>
+	</string>
+	<string id="ui_mcm_anomaly_fsr_note">
+		<text>Set a resolution lower than your monitor in Options > Video (Borderless or Fullscreen mode) to use FSR. Requires the DX11 renderer and the modded exes.</text>
+	</string>
+</string_table>
